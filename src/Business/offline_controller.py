@@ -102,6 +102,7 @@ class OfflineController:
             self.__file_workers.append(worker)
             worker.execute(WorkerJobType.DUPLICATE_FILE_CONTENT)
             self.__logger.info("Start worker executing on %d files" %(len(task_list)))
+            start_index += amount
         
         # directory hashing content
         worker = OfflineWorker(operator, repo, fs_repo)

@@ -127,7 +127,7 @@ class OfflineWorker:
                 dir_size =  self.__operator.get_dir_size(current_dir)
                 dir_modif_time = self.__operator.get_modification_time_for_path(current_dir)
                 current_parent_id = self.__fs_repo.add_fs_item(dir_name, ItemType.DIRECTORY, previous_parent_id, dir_size, str(dir_modif_time), current_dir)
-                self.__logger.debug("Add %s to FS_Repo with id %d" % (current_dir, current_parent_id))
+                dirs.append(current_parent_id)
                 if target_id is None:
                     target_id = current_parent_id
                 sub_files, sub_dirs = self.__operator.get_content_of_directory(current_dir)
@@ -137,13 +137,11 @@ class OfflineWorker:
                     file_size = self.__operator.get_file_size(item)
                     file_modif_time = self.__operator.get_modification_time_for_path(item)
                     item_id = self.__fs_repo.add_fs_item(item_name, ItemType.FILE, current_parent_id, file_size, str(file_modif_time), item)
-                    self.__logger.debug("Add %s to FS_Repo with id %d" % (item, item_id))
-                    files.append(item)
+                    files.append(item_id)
                 #process the sub directories
                 for item in sub_dirs:
                     item_path = self.__operator.concat_paths(current_dir, item)
                     stack.append((item_path, current_parent_id))
-                    dirs.append(item_path)
             #print(files, dirs, target_id)
             self.__results = files, dirs, target_id
             self.set_status(WorkerStatus.FINISH)
@@ -175,7 +173,7 @@ class OfflineWorker:
         elif size < 104857600: # less than 100mb
             chunks = 4 +  size // 10485760 # one for each 10mb
         elif size < 1073741824: # less than 1Gb
-            chunks = 14 + size // 104857600 # ne chunk for each 100mb
+            chunks = 14 + size // 104857600 # one chunk for each 100mb
         elif  size < 10737418240: # less than 10Gb
             chunks = 24 + size // 1073741824 # for each Gb
         else: 
@@ -190,22 +188,24 @@ class OfflineWorker:
         duplicates = []
         self.__logger.info("worker start executing")
         try:
-            for file in self.__task_list:
-                self.__logger.debug("hashing %s" %(file))
+            for file_id in self.__task_list:
+                # get the fs_item corresponding object
+                file_fs_item = self.__fs_repo.load_item_by_id(file_id)
+                self.__logger.debug("hashing %s" %(file_fs_item.item_path))
                 # get the file size
-                file_size = self.__operator.get_file_size(file)
+                file_size = file_fs_item.item_size
                 # get the number of chunk based on the file size
                 nr_chunks = self.__calculate_chunks_per_size(file_size)
                 # get the chunks of files of a fixed size
-                chunks = self.__operator.get_file_chunks(file, nr_chunks)
+                chunks = self.__operator.get_file_chunks(file_fs_item.item_path, nr_chunks)
                 # create the hash based on the chunks
                 hash = Algorithm.create_hash_for_file(chunks)
-                self.__logger.debug("hash for %s is %s" %(file,hash))
+                self.__logger.debug("hash for %s is %s" %(file_fs_item.item_path,hash))
                 # save the new data
-                status_ent = self.__dup_repo.add_data(file, file_size, hash)
+                status_ent = self.__dup_repo.add_data(file_fs_item.item_path, file_size, hash)
                 if status_ent == 1:
-                    duplicates.append(file)
-                    self.__logger.debug("file %s is duplicate"%(file))
+                    duplicates.append(file_fs_item.item_id)
+                    self.__logger.debug("file %s is duplicate"%(file_fs_item.item_path))
                 #update progress
                 self.__add_progress()
             #self.__results = duplicates
@@ -222,11 +222,13 @@ class OfflineWorker:
         """
         duplicates = []
         try:
-            for dir in self.__task_list:
+            for dir_id in self.__task_list:
+                # get the fs_item corresponding object
+                dir_fs_item = self.__fs_repo.load_item_by_id(dir_id)
                 # get the file size
-                dir_size = self.__operator.get_file_size(dir)
+                dir_size = dir_fs_item.item_size
                 # get the number of chunk based on the file size
-                files, dirs = self.__operator.get_content_of_directory(dir)
+                files, dirs = self.__operator.get_content_of_directory(dir_fs_item.item_path)
                 content_hashes = []
                 for ent in files + dirs:
                     hash_ent = self.__dup_repo.get_hash_for_entity(ent)
@@ -235,9 +237,9 @@ class OfflineWorker:
                 # create the hash based on the chunks
                 hash = Algorithm.create_hash_for_file(content_hashes)
                 # save the new data
-                status_ent = self.__dup_repo.add_data(dir, dir_size, hash)
+                status_ent = self.__dup_repo.add_data(dir_fs_item.item_path, dir_size, hash)
                 if status_ent == 1:
-                    duplicates.append(dir)
+                    duplicates.append(dir_fs_item.item_id)
                 #update progress
                 self.__add_progress()
             self.__results = duplicates
