@@ -13,6 +13,7 @@ from functools import partial
 from Business.operator import Operator
 from Repository.duplicate_repository import DuplicateRepository
 from concurrent.futures import ThreadPoolExecutor
+from Utils.logger import HasherLogger
 
 
 class WorkerStatus(Enum):
@@ -33,18 +34,15 @@ class WorkerJobType(Enum):
 
 
 class OfflineWorker:
-    def __init__(self, operator: Operator, repo: Repository) -> None:
     def __init__(self, operator: Operator, repo: DuplicateRepository) -> None:
         """
         OfflineWorker is an object that analyse a specific portion of the the target system. 
         It's primary tasks are creating and counter registries for each file or directory
             :param operator: - An Operator object related to the target system (local or remote system)
-            :param repo: - A Repository object for file or directory registrations on the local system
             :param repo: - A DuplicateRepository object for file or directory registrations on the local system
         """
         self.__task_list = [] # the list of files or directories that need to be analysed
         self.__operator = operator # Operator object related to the target system
-        self.__repo = repo # Repository object for file or directory registrations on the local system
         self.__repo = repo # DuplicateRepository object for file or directory registrations on the local system
         self.__status = WorkerStatus.INITIALISE # current status of the worker
         self.__th_worker = None # the thread that actually executes the task, this is useful for checking the status of the job
@@ -52,6 +50,7 @@ class OfflineWorker:
         self.__results = [] # how many duplicate entities have been found
         self.__mutex_progress = Lock() # thread safe lock for __progress
         self.__mutex_status = Lock() # thread safe lock for __status
+        self.__logger = HasherLogger.get_logger()
         
     def prepare(self, task_list: list) -> None:
         """
@@ -61,6 +60,7 @@ class OfflineWorker:
         self.__task_list = task_list
         self.__status = WorkerStatus.START
         self.__progres = 0
+        self.__logger.info("worker prepared")
     
     def get_progress(self) -> int:
         """
@@ -135,8 +135,10 @@ class OfflineWorker:
         Hashed each file from the list of tasks by content
         """
         duplicates = []
+        self.__logger.info("worker start executing")
         try:
             for file in self.__task_list:
+                self.__logger.debug("hashing %s" %(file))
                 # get the file size
                 file_size = self.__operator.get_file_size(file)
                 # get the number of chunk based on the file size
@@ -145,15 +147,19 @@ class OfflineWorker:
                 chunks = self.__operator.get_file_chunks(file, nr_chunks)
                 # create the hash based on the chunks
                 hash = Algorithm.create_hash_for_file(chunks)
+                self.__logger.debug("hash for %s is %s" %(file,hash))
                 # save the new data
                 status_ent = self.__repo.add_data(file, file_size, hash)
                 if status_ent == 1:
                     duplicates.append(file)
+                    self.__logger.debug("file %s is duplicate"%(file))
                 #update progress
                 self.__add_progress()
-            self.__results = duplicates
+            #self.__results = duplicates
             self.set_status(WorkerStatus.FINISH)
+            self.__logger.info("worker end execution")
         except Exception as ex:
+            self.__logger.error(ex)
             print(ex, traceback.format_exc())
             self.set_status(WorkerStatus.FAILURE)
     
