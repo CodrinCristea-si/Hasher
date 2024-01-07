@@ -11,7 +11,9 @@ from enum import Enum
 from Utils.algorithm import Algorithm
 from functools import partial
 from Business.operator import Operator
-from Repository.duplicate_repository import DuplicateRepository
+from Repository.SingletonRepository import SingletonDuplicateRepository
+from Repository.SingletonRepository import SingletonFsRepository
+from Repository.fsitem import *
 from concurrent.futures import ThreadPoolExecutor
 from Utils.logger import HasherLogger
 
@@ -31,19 +33,21 @@ class WorkerJobType(Enum):
     DUPLICATE_DIRECTORY_CONTENT = 1 # check directory duplicates by content
     DUPLICATE_FILE_NAME = 2 # check file duplicates by name
     DUPLICATE_DIRECTORY_NAME = 3 # check directory duplicates by name
+    ANALYSE_TARGET = 4
 
 
 class OfflineWorker:
-    def __init__(self, operator: Operator, repo: DuplicateRepository) -> None:
+    def __init__(self, operator: Operator, dup_repo: SingletonDuplicateRepository, fs_repo:SingletonFsRepository) -> None:
         """
-        OfflineWorker is an object that analyse a specific portion of the the target system. 
+        OfflineWorker is an object that analyze a specific portion of the the target system. 
         It's primary tasks are creating and counter registries for each file or directory
             :param operator: - An Operator object related to the target system (local or remote system)
             :param repo: - A DuplicateRepository object for file or directory registrations on the local system
         """
-        self.__task_list = [] # the list of files or directories that need to be analysed
+        self.__task_list = [] # the list of files or directories that need to be analyzed
         self.__operator = operator # Operator object related to the target system
-        self.__repo = repo # DuplicateRepository object for file or directory registrations on the local system
+        self.__dup_repo = dup_repo # DuplicateRepository object for file or directory registrations on the local system
+        self.__fs_repo =  fs_repo # FS_Repository object for file system architecture on the local system
         self.__status = WorkerStatus.INITIALISE # current status of the worker
         self.__th_worker = None # the thread that actually executes the task, this is useful for checking the status of the job
         self.__progres = 0 # how many entities from __task_list have been processed so far
@@ -101,6 +105,54 @@ class OfflineWorker:
         """
         return self.__results
     
+    def __analyse_target(self) -> None:
+        """
+        Gets the files and subdirectories from all levels of the specified target
+            :raise Exception:
+                -> If the target is already in the analyzing stage.
+        """
+        #nr_files = 0
+        files = []
+        #nr_dirs = 0
+        dirs = []
+        target =  self.__task_list[0]
+        #print(target)
+        previous_parent_id = 0
+        target_id = None
+        stack = [(target, previous_parent_id)]
+        try:
+            while stack:
+                current_dir, previous_parent_id = stack.pop()
+                dir_name = self.__operator.get_directory_name_from_path(current_dir)
+                dir_size =  self.__operator.get_dir_size(current_dir)
+                dir_modif_time = self.__operator.get_modification_time_for_path(current_dir)
+                current_parent_id = self.__fs_repo.add_fs_item(dir_name, ItemType.DIRECTORY, previous_parent_id, dir_size, str(dir_modif_time), current_dir)
+                self.__logger.debug("Add %s to FS_Repo with id %d" % (current_dir, current_parent_id))
+                if target_id is None:
+                    target_id = current_parent_id
+                sub_files, sub_dirs = self.__operator.get_content_of_directory(current_dir)
+                # process the files
+                for item in sub_files:
+                    item_name = self.__operator.get_file_name_from_path(item)
+                    file_size = self.__operator.get_file_size(item)
+                    file_modif_time = self.__operator.get_modification_time_for_path(item)
+                    item_id = self.__fs_repo.add_fs_item(item_name, ItemType.FILE, current_parent_id, file_size, str(file_modif_time), item)
+                    self.__logger.debug("Add %s to FS_Repo with id %d" % (item, item_id))
+                    files.append(item)
+                #process the sub directories
+                for item in sub_dirs:
+                    item_path = self.__operator.concat_paths(current_dir, item)
+                    stack.append((item_path, current_parent_id))
+                    dirs.append(item_path)
+            #print(files, dirs, target_id)
+            self.__results = files, dirs, target_id
+            self.set_status(WorkerStatus.FINISH)
+        except Exception as ex:
+            self.__logger.error(ex)
+            print(ex, traceback.format_exc())
+            self.set_status(WorkerStatus.FAILURE)
+        self.__logger.info("worker end execution")
+        
     def __add_progress(self) -> None:
         """
         Increments the __progres
@@ -130,6 +182,7 @@ class OfflineWorker:
             chunks = 24 + size // 10737418240 # for each 10Gb
         return chunks
         
+        
     def __hash_files_by_content(self) -> None:
         """
         Hashed each file from the list of tasks by content
@@ -149,7 +202,7 @@ class OfflineWorker:
                 hash = Algorithm.create_hash_for_file(chunks)
                 self.__logger.debug("hash for %s is %s" %(file,hash))
                 # save the new data
-                status_ent = self.__repo.add_data(file, file_size, hash)
+                status_ent = self.__dup_repo.add_data(file, file_size, hash)
                 if status_ent == 1:
                     duplicates.append(file)
                     self.__logger.debug("file %s is duplicate"%(file))
@@ -176,13 +229,13 @@ class OfflineWorker:
                 files, dirs = self.__operator.get_content_of_directory(dir)
                 content_hashes = []
                 for ent in files + dirs:
-                    hash_ent = self.__repo.get_hash_for_entity(ent)
+                    hash_ent = self.__dup_repo.get_hash_for_entity(ent)
                     content_hashes.append(hash_ent)
                 # get the chunks of files of a fixed size
                 # create the hash based on the chunks
                 hash = Algorithm.create_hash_for_file(content_hashes)
                 # save the new data
-                status_ent = self.__repo.add_data(dir, dir_size, hash)
+                status_ent = self.__dup_repo.add_data(dir, dir_size, hash)
                 if status_ent == 1:
                     duplicates.append(dir)
                 #update progress
@@ -190,6 +243,7 @@ class OfflineWorker:
             self.__results = duplicates
             self.set_status(WorkerStatus.FINISH)
         except Exception as ex:
+            self.__logger.error(ex)
             print(ex, traceback.format_exc())
             # print(sys.gettrace())
             self.set_status(WorkerStatus.FAILURE)
@@ -204,9 +258,10 @@ class OfflineWorker:
             target_method = partial(self.__hash_files_by_content)
         elif job_type == WorkerJobType.DUPLICATE_DIRECTORY_CONTENT:
             target_method = partial(self.__hash_directories_by_content)
+        elif job_type == WorkerJobType.ANALYSE_TARGET:
+            target_method = partial(self.__analyse_target)
         self.__th_worker = ThreadPoolExecutor()
         future = self.__th_worker.submit(target_method)
-        
     
     def finish(self) -> None:
         """

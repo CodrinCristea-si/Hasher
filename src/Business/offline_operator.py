@@ -130,7 +130,7 @@ class OfflineOperator(Operator):
         dir_name = os.path.basename(dir_path)
         return dir_name
     
-    def get_content_of_directory(self, directory_path) -> tuple:
+    def get_content_of_directory(self, directory_path:str) -> tuple:
         """
         Get the files and subdirectories of the directory
             :param directory_path: A string representing the directory's path
@@ -144,3 +144,39 @@ class OfflineOperator(Operator):
             elif os.path.isdir(item_path):
                 dirs.append(item_path)
         return files, dirs
+
+    def get_modification_time_for_path(self, path:str) -> float:
+        """
+        Get the last modified time for a file/directory
+            :param path: The path of the file/directory
+            :return: A float number representing the number of seconds since the epoch
+        """
+        time_mof = os.path.getmtime(path)
+        return time_mof
+    
+    def concat_paths(self, path1:str, path2:str) -> str:
+        """
+        Joins two path
+            :param path1: A string representing the first path
+            :param path2: A string representing the second path
+            :return: A string representing the joined paths
+        """
+        full_path = os.path.join(path1, path2)
+        return full_path
+    
+    def check_if_path_is_file(self, path:str) -> bool:
+        """
+        Checks if the path represents a file
+            :param path: The absolute path of the potential file
+            :return: True if the path points to a file, False otherwise
+        """
+        return os.path.isfile(path)
+    
+    def check_if_path_is_directory(self, path:str) -> bool:
+        """
+        Checks if the path represents a directory
+            :param path: The absolute path of the potential directory
+            :return: True if the path points to a directory, False otherwise
+        """
+        return os.path.isdir(path)
+

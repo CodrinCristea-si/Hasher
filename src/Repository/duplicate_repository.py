@@ -70,10 +70,8 @@ class DuplicateRepository:
             results = self.__create_json_results()
             results = json.dumps(results)
             file.write(results)
-    #
-    # def __check_if_storage_file_exists(self):
-    #     if not os.path.exists(self.__STORAGE_FILE):
-    #         os.
+
+
     
     def add_data(self, data_location:str, data_size:int, data_hash:str) -> int:
         """

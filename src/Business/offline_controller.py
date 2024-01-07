@@ -53,27 +53,20 @@ class OfflineController:
         if not fs_repo.begin_session() == 0:
             self.__logger.critical("Cannot analyze the an already in analyzing process of the target %s" %(target))
             raise Exception("Cannot analyze the an already in analyzing process of the target %s" %(target))
-        previous_parent_id = 0
-        target_id = None
-        stack = [(target, previous_parent_id)]
-        while stack:
-            current_dir, previous_parent_id = stack.pop()
-            current_parent_id = fs_repo.add_fs_item(os.path.basename(current_dir), ItemType.DIRECTORY, previous_parent_id, os.path.getsize(current_dir), str(os.path.getmtime(current_dir)), current_dir)
-            self.__logger.debug("Add %s to FS_Repo with id %d" % (current_dir, current_parent_id))
-            if target_id is None:
-                target_id = current_parent_id
-            for item in os.listdir(current_dir):
-                item_path = os.path.join(current_dir, item)
-                if os.path.isfile(item_path):
-                    item_id = fs_repo.add_fs_item(item, ItemType.FILE, current_parent_id, os.path.getsize(target), str(os.path.getmtime(target)), item_path)
-                    self.__logger.debug("Add %s to FS_Repo with id %d" % (item, item_id))
-                    files.append(item_path)
-                elif os.path.isdir(item_path):
-                    stack.append((item_path, current_parent_id))
-                    dirs.append(item_path)
-            #previous_parent_id = current_parent_id
+        
+        operator = OfflineOperator()
+        repo = SingletonDuplicateRepository()
+        repo.begin_session()
+        
+        worker = OfflineWorker(operator, repo, fs_repo)
+        worker.prepare([target])
+        worker.execute(WorkerJobType.ANALYSE_TARGET)
+        worker.finish()
+        files, dirs, target_id = worker.get_work_results()
+        
         fs_repo.end_session()
         self.__logger.info("Fs_Repo session ended")
+        
         return files, dirs, target_id
     
     def __mark_duplicates_in_fs_repo(self):
@@ -95,6 +88,8 @@ class OfflineController:
         start_index = 0
         amount = len(files) // self.__nr_file_workers
         operator = OfflineOperator()
+        fs_repo = SingletonFsRepository()
+        
         repo = SingletonDuplicateRepository()
         repo.begin_session()
         
@@ -102,14 +97,14 @@ class OfflineController:
         for i in range(self.__nr_file_workers):
             end_index = start_index + amount  if i != self.__nr_file_workers - 1 else len(files)
             task_list = files[start_index:end_index]
-            worker = OfflineWorker(operator, repo)
+            worker = OfflineWorker(operator, repo, fs_repo)
             worker.prepare(task_list)
             self.__file_workers.append(worker)
             worker.execute(WorkerJobType.DUPLICATE_FILE_CONTENT)
             self.__logger.info("Start worker executing on %d files" %(len(task_list)))
         
         # directory hashing content
-        worker = OfflineWorker(operator, repo)
+        worker = OfflineWorker(operator, repo, fs_repo)
         worker.prepare(dirs)
         self.__file_workers.append(worker)
         worker.execute(WorkerJobType.DUPLICATE_DIRECTORY_CONTENT)
