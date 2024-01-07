@@ -130,6 +130,33 @@ class OfflineController:
         if fs_item is None:
             return None
         return UIItem(fs_item.item_id, fs_item.item_name, self.__convert_item_type_to_ui_type(fs_item.item_type), fs_item.parent_id, fs_item.is_duplicate)
+    
+    def load_duplicates_for_target(self, target:str) -> list:
+        self.__logger.info("Load duplicates for %s" %(target))
+        fs_repo = SingletonFsRepository()
+        fs_item_target = fs_repo.load_item_by_path(target)
+        duplicates_items = fs_repo.load_items_by_parent_id(fs_item_target.item_id)
+        self.__logger.info("Duplicates found %d" %(len(duplicates_items)))
+        dups_ui_items = []
+        for di in duplicates_items: 
+            if di.is_duplicate:   
+                ui_item = self.__convert_fs_item_to_ui_item(di)
+                dups_ui_items.append(ui_item)
+        self.__logger.info("Conversion done")
+        return dups_ui_items
+    
+    def load_duplicates_for_target_by_id(self, target_id:int) -> list:
+        self.__logger.info("Load duplicates for %d" %(target_id))
+        fs_repo = SingletonFsRepository()
+        duplicates_items = fs_repo.load_items_by_parent_id(target_id)
+        self.__logger.info("Duplicates found %d" %(len(duplicates_items)))
+        dups_ui_items = []
+        for di in duplicates_items: 
+            if di.is_duplicate:
+                ui_item = self.__convert_fs_item_to_ui_item(di)
+                dups_ui_items.append(ui_item)
+        self.__logger.info("Conversion done")
+        return dups_ui_items
         
     def get_all_duplicates(self):
         fs_repo = SingletonFsRepository()
