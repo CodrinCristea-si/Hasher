@@ -26,7 +26,8 @@ class OfflineController:
         self.__file_workers = [] # the list of workers that process files
         self.__nr_dir_workers = 2  # the number of workers that process directories 
         self.__dir_workers = [] # the list of workers that process directories
-        
+        self.__logger = HasherLogger.get_logger()
+
     def analyse_target(self, target:str) -> tuple:
         """
         Gets tne files and subdirectories from all levels of the specified target
@@ -43,31 +44,36 @@ class OfflineController:
         #nr_dirs = 0
         dirs = []
         if not os.path.exists(target):
+            self.__logger.error("%s does not exist!" % (target))
             raise Exception("%s does not exist!" % (target))
         if not os.path.isdir(target):
+            self.__logger.error("%s is not a directory" % (target))
             raise Exception("%s is not a directory" % (target))
         fs_repo = SingletonFsRepository()
         if not fs_repo.begin_session() == 0:
+            self.__logger.critical("Cannot analyze the an already in analyzing process of the target %s" %(target))
             raise Exception("Cannot analyze the an already in analyzing process of the target %s" %(target))
         previous_parent_id = 0
         target_id = None
         stack = [(target, previous_parent_id)]
         while stack:
-            current_dir = stack.pop()
             current_dir, previous_parent_id = stack.pop()
             current_parent_id = fs_repo.add_fs_item(os.path.basename(current_dir), ItemType.DIRECTORY, previous_parent_id, os.path.getsize(current_dir), str(os.path.getmtime(current_dir)), current_dir)
+            self.__logger.debug("Add %s to FS_Repo with id %d" % (current_dir, current_parent_id))
             if target_id is None:
                 target_id = current_parent_id
             for item in os.listdir(current_dir):
                 item_path = os.path.join(current_dir, item)
                 if os.path.isfile(item_path):
                     item_id = fs_repo.add_fs_item(item, ItemType.FILE, current_parent_id, os.path.getsize(target), str(os.path.getmtime(target)), item_path)
+                    self.__logger.debug("Add %s to FS_Repo with id %d" % (item, item_id))
                     files.append(item_path)
                 elif os.path.isdir(item_path):
                     stack.append((item_path, current_parent_id))
                     dirs.append(item_path)
             #previous_parent_id = current_parent_id
         fs_repo.end_session()
+        self.__logger.info("Fs_Repo session ended")
         return files, dirs, target_id
     
     def __mark_duplicates_in_fs_repo(self):
@@ -82,7 +88,9 @@ class OfflineController:
             :param target: A string object specifying the path to the target object
             :return: A list of path like objects for all the files and subdirectories that are marked as duplicates 
         """
+        self.__logger.info("Checking duplicates by content for %s" %(target))
         files, dirs, target_id = self.analyse_target(target)
+        self.__logger.info("Analyze step done")
         dups = []
         start_index = 0
         amount = len(files) // self.__nr_file_workers
@@ -98,16 +106,21 @@ class OfflineController:
             worker.prepare(task_list)
             self.__file_workers.append(worker)
             worker.execute(WorkerJobType.DUPLICATE_FILE_CONTENT)
+            self.__logger.info("Start worker executing on %d files" %(len(task_list)))
+        
         # directory hashing content
         worker = OfflineWorker(operator, repo)
         worker.prepare(dirs)
         self.__file_workers.append(worker)
         worker.execute(WorkerJobType.DUPLICATE_DIRECTORY_CONTENT)
+        self.__logger.info("Start worker executing on %d dirs" %(len(dirs)))
         # waiting for jobs to be done
         for worker in self.__file_workers:
             worker.finish()
             # dups += worker.get_work_results()
+        self.__logger.info("Workers ended their execution")
         self.__mark_duplicates_in_fs_repo()
+        self.__logger.info("Duplicates marked")
 
         
     def __convert_item_type_to_ui_type(self, item_type:ItemType):
