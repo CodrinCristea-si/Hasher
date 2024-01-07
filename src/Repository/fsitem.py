@@ -9,6 +9,7 @@ from enum import Enum
 
 
 class ItemType(Enum):
+    NONE = -1
     FILE = 0
     DIRECTORY = 1
     SYMLINK = 2
