@@ -19,8 +19,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QPixmap, QIcon
 from PyQt6.QtCore import Qt
 
+from UI.offline_gui import OfflineWindowGUI
 
-class Window(QMainWindow):
+
+class Window(QWidget):
     __RESOURCE_PATH = os.getcwd() + "/resources/"
     __RESOURCE_IMAGES_PATH = __RESOURCE_PATH + "images/"
     __RESOURCE_STYLE_PATH = __RESOURCE_PATH + "css/"
@@ -52,8 +54,8 @@ class Window(QMainWindow):
             self.setStyleSheet(stylesheet)
         
         #create the main widget(scene)
-        central_widget = QWidget(self)
-        self.setCentralWidget(central_widget)
+        # central_widget = QWidget(self)
+        # self.setCentralWidget(central_widget)
         
         # menu layout
         vbox = QVBoxLayout()
@@ -103,7 +105,8 @@ class Window(QMainWindow):
         button_offline.clicked.connect(self.__handle_offline_option)
         vbox.addWidget(button_offline)
 
-        central_widget.setLayout(vbox)
+        # central_widget.setLayout(vbox)
+        self.setLayout(vbox)
 
     def __check_for_available_resources_files(self):
         """
@@ -140,11 +143,19 @@ class Window(QMainWindow):
         msg.exec()
     
     def __handle_offline_option(self):
-        msg = QMessageBox()
-        msg.setWindowTitle("Feature not available")
-        msg.setText("This feature is not available")
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.exec()
+        #self.close()
+        #app = QApplication(sys.argv)
+        self.hide()
+        self.offline_window = OfflineWindowGUI()
+        self.offline_window.show()
+        #sys.exit(app.exec())
+        
+        #self.close()
+        # msg = QMessageBox()
+        # msg.setWindowTitle("Feature not available")
+        # msg.setText("This feature is not available")
+        # msg.setIcon(QMessageBox.Icon.Information)
+        # msg.exec()
     
     # def _createMenu(self):
     #     menu = self.menuBar().addMenu("&Menu")
