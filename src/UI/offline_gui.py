@@ -5,6 +5,7 @@ Created on Aug 13, 2023
 '''
 import sys
 import os
+from Utils.secure_debugging import enable_debug_mode
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -19,21 +20,44 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QTextEdit,
     QTreeView,
-    QSpacerItem, QGridLayout
+    QSpacerItem, 
+    QGridLayout,
+    QFileDialog,
+    QStyle,
+    QStyledItemDelegate
 )
 #from PySide6.QtWidgets import QFileSystemModel
 
 from PyQt6.QtGui import QPixmap, QIcon, QFileSystemModel, QStandardItemModel, QStandardItem
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
+
+from Business.offline_controller import OfflineController
+from UI.ui_item import UIItemType, UIItem
+
+class CustomDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        if index.isValid():
+            item = index.model().itemFromIndex(index)
+            if item is not None:
+                text = item.text()
+                icon = item.icon()
+                x_offset = option.rect.left() + 30  # Adjust the spacing as needed
+                y_offset = option.rect.top() + 10   # Adjust the vertical positioning
+
+                painter.drawPixmap(x_offset - 30, y_offset - 5, icon.pixmap(16, 16))  # Draw the icon
+                painter.drawText(x_offset, y_offset, text)  # Draw the text
 
 
-class OfflineWindowGUI(QMainWindow):
+
+class OfflineWindowGUI(QWidget):
     def __init__(self):
         """
         Draw the main popup for connection
         """
-        self.__current_target = "/"
+        #self.__current_target = "/Users/cristeacodrin/eclipse-workspace/Hasher/src/testing/simulation_ffline_hasher" # default should be /
+        self.__current_target = "/Users/cristeacodrin/eclipse-workspace/Hasher/src/testing/small_scale/by_content"
         self.__current_status = "UP TO DATE"
+        self.__dups_list = []
         # check if the style files and images are available and reachable
         # try:
         #     self.__check_for_available_resources_files()
@@ -56,21 +80,26 @@ class OfflineWindowGUI(QMainWindow):
         #     self.setStyleSheet(stylesheet)
         
         #create the main widget(scene)
-        central_widget = QWidget(self)
-        self.setCentralWidget(central_widget) 
+        #central_widget = QWidget(self)
+        #self.setCentralWidget(central_widget) 
         
         # menu layout
         vbox = QVBoxLayout()
+        
 
 
         target_hbox = QHBoxLayout()
         target_label = QLabel("Current target:", self)
-        target_input = QLineEdit()
-        target_input.setText(self.__current_target)
+        self.__target_input = QLineEdit()
+        self.__target_input.setText(self.__current_target)
         button_change_target = QPushButton("Change Target", self)
-
+        button_change_target.clicked.connect(self.browse_target)
+        
+        # self.__target_path_changed = pyqtSignal(str)
+        # self.__target_path_changed.connect(self.update_target_path)
+        
         target_hbox.addWidget(target_label)
-        target_hbox.addWidget(target_input)
+        target_hbox.addWidget(self.__target_input)
         target_hbox.addWidget(button_change_target)
         vbox.addLayout(target_hbox)
         
@@ -78,21 +107,21 @@ class OfflineWindowGUI(QMainWindow):
         content_vbox = QVBoxLayout()
 
         content_label = QLabel("Target Content:")
-        content_tree_view = QTreeView()
+        self.__content_tree_view = QTreeView()
 
         # Set up a QFileSystemModel to display the directory content in the tree view
-        content_file_system_model = QFileSystemModel()
-        content_file_system_model.setRootPath(self.__current_target)
-        content_tree_view.setModel(content_file_system_model)
-        content_tree_view.setRootIndex(content_file_system_model.index(self.__current_target))
+        self.__content_file_system_model = QFileSystemModel()
+        self.__content_file_system_model.setRootPath(self.__current_target)
+        self.__content_tree_view.setModel(self.__content_file_system_model)
+        self.__content_tree_view.setRootIndex(self.__content_file_system_model.index(self.__current_target))
 
         # Hide other columns and show only the name column (0)
-        for col in range(content_file_system_model.columnCount()):
+        for col in range(self.__content_file_system_model.columnCount()):
             if col != 0:
-                content_tree_view.setColumnHidden(col, True)
+                self.__content_tree_view.setColumnHidden(col, True)
 
         content_vbox.addWidget(content_label)
-        content_vbox.addWidget(content_tree_view)
+        content_vbox.addWidget(self.__content_tree_view)
         vbox.addLayout(content_vbox)
         
         duplicate_vbox = QVBoxLayout()
@@ -106,34 +135,33 @@ class OfflineWindowGUI(QMainWindow):
         status_hbox.addWidget(duplicates_label_status)
         duplicate_vbox.addLayout(status_hbox)
         
-        duplicate_tree_view = QTreeView()
-        # Set up a QFileSystemModel to display the directory content in the tree view
+                # Set up a QFileSystemModel to display the directory content in the tree view
         # duplicate_file_system_model = QFileSystemModel()
         # root_path = self.__current_target  # Replace with the desired directory path
         # duplicate_file_system_model.setRootPath(root_path)
         # duplicate_tree_view.setModel(duplicate_file_system_model)
         # duplicate_tree_view.setRootIndex(duplicate_file_system_model.index(root_path))
-        model = QStandardItemModel()
-        duplicate_tree_view.setModel(model)
+        
+        self.__duplicate_tree_view = QTreeView()
 
-        custom_paths = [
-            # "/path/to/custom_directory1",
-            # "/path/to/custom_directory2",
-            # # Add more custom paths as needed
-            "/Applications/ArmGNUToolchain/12.2.mpacbti-rel1/arm-none-eabi/bin",
-            "/Library/Audio/Apple Loops/Apple/01 Hip Hop/Afloat Beat.caf"
-        ]
+        self.__model_dups = QStandardItemModel()
+        self.__duplicate_tree_view.setModel(self.__model_dups)
+        # delegate = CustomDelegate()
+        # self.__duplicate_tree_view.setItemDelegate(delegate)
+        self.__duplicate_tree_view.clicked.connect(self.__update_dups_list_children)
 
-        for custom_path in custom_paths:
-            item = QStandardItem(custom_path)
-            model.appendRow(item)
-
-        duplicate_vbox.addWidget(duplicate_tree_view)
+        # custom_paths = [
+        #     "/Applications/ArmGNUToolchain/12.2.mpacbti-rel1/arm-none-eabi/bin",
+        #     "/Library/Audio/Apple Loops/Apple/01 Hip Hop/Afloat Beat.caf"
+        # ]
+        #self.__update_list_dups([])
+        duplicate_vbox.addWidget(self.__duplicate_tree_view)
         vbox.addLayout(duplicate_vbox)
         
         action_grid = QGridLayout()
         
         check_duplicates_content_button = QPushButton("Check Duplicates by Content", self)
+        check_duplicates_content_button.clicked.connect(self.handle_check_cups_by_content)
         action_grid.addWidget(check_duplicates_content_button, 0, 0)
         
         check_duplicates_name_button = QPushButton("Check Duplicates by Name", self)
@@ -152,56 +180,119 @@ class OfflineWindowGUI(QMainWindow):
         action_grid.addWidget(settings_button, 2, 1)
         
         vbox.addLayout(action_grid)
-        
 
-        # load the hasher logo
-        # pixmap = QPixmap(self.__RESOURCE_IMAGES_PATH + "hasher-logo.png")  
-        # image_label = QLabel(self)
-        # image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # image_label.setPixmap(pixmap)
-        # vbox.addWidget(image_label)
-        #
-        # # Online section
-        #
-        # # put the google option
-        # button_google = QPushButton("Connect with", self)
-        # google_logo_pixmap = QPixmap(self.__RESOURCE_IMAGES_PATH + "Google_Logo.png")
-        # google_logo_icon = QIcon(google_logo_pixmap)
-        # button_google.setIcon(google_logo_icon)
-        # button_google.setProperty("class", "option_button")
-        # button_google.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        # button_google.clicked.connect(self.__handle_google_option)
-        # vbox.addWidget(button_google)
-        #
-        # # put the onedrive option
-        # button_one_drive = QPushButton("Connect with", self)
-        # one_drive_pixmap = QPixmap(self.__RESOURCE_IMAGES_PATH + "Microsoft_Office_OneDrive_Logo.png")
-        # one_drive_icon = QIcon(one_drive_pixmap)
-        # button_one_drive.setIcon(one_drive_icon)
-        # button_one_drive.setProperty("class", "option_button")
-        # button_one_drive.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        # button_one_drive.clicked.connect(self.__handle_onedrive_option)
-        # vbox.addWidget(button_one_drive)
-        #
-        # # Separator between online and offline section
-        #
-        # label = QLabel("—————————————————— or ——————————————————", self)
-        # label.setProperty("class", "label_separator")
-        # label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        # vbox.addWidget(label)
-        #
-        # # Offline section
-        #
-        # # put the offline option
-        # button_offline = QPushButton("Offline", self)
-        # button_offline.setProperty("class", "option_button")
-        # button_offline.clicked.connect(self.__handle_offline_option)
-        # vbox.addWidget(button_offline)
+        #central_widget.setLayout(vbox)
+        self.setLayout(vbox)
+    
+    def browse_target(self):
+        #options = QFileDialog.ShowDirsOnly
+        dialog = QFileDialog(self)
+        #dialog.setFileMode(QFileDialog.Option.ShowDirsOnly)
+        directory_path = QFileDialog.getExistingDirectory(self, "Open Directory", "", options = QFileDialog.Option.ShowDirsOnly)
+        self.__current_target = directory_path
+        self.update_target_path(directory_path)
+    
+    def update_target_path(self, new_target_path):
+        self.__target_input.setText(new_target_path)
+        self.__content_file_system_model.setRootPath(self.__current_target)
+        self.__content_tree_view.setRootIndex(self.__content_file_system_model.index(self.__current_target))
+    
+    def __create_standard_item_from_ui_item(self, ui_item:UIItem):
+        standard_item = QStandardItem(ui_item.item_name)
+        pixmap_icon = None
+        if ui_item.item_type == UIItemType.DIRECTORY:
+            pixmap_icon = QStyle.StandardPixmap.SP_DirIcon
+        elif ui_item.item_type == UIItemType.SYMLINK:
+            pixmap_icon = QStyle.StandardPixmap.SP_FileLinkIcon
+        else:
+            pixmap_icon = QStyle.StandardPixmap.SP_FileIcon
+        icon = self.style().standardIcon(pixmap_icon)
+        standard_item.setIcon(icon)
+        standard_item.setData(ui_item, Qt.ItemDataRole.UserRole)
+        return standard_item
+    
+    def __load_duplicates_for_std_item(self, item_model: QStandardItem):
+        cont =  OfflineController()
+        ui_item = item_model.data(Qt.ItemDataRole.UserRole)
+        dups_childs = cont.load_duplicates_for_target_by_id(ui_item.item_id)
+        dups_childs_item = []
+        for ui_item in dups_childs:
+            item = self.__create_standard_item_from_ui_item(ui_item)
+            dups_childs_item.append(item)
+        item_model.appendRow(dups_childs_item)
+    
+    def __update_dups_list_children(self, index):
+        cont =  OfflineController()
+        #print(index.row(), index.column(), index.parent_id())
+        if not index.isValid(): 
+            return
+        clicked_item_model = self.__model_dups.itemFromIndex(index)
+        clicked_ui_item = clicked_item_model.data(Qt.ItemDataRole.UserRole)
+        if clicked_ui_item.item_type == UIItemType.DIRECTORY:
+            if not clicked_item_model.hasChildren():
+                dups_childs = cont.load_duplicates_for_target_by_id(clicked_ui_item.item_id)
+                dups_childs_item = []
+                for ui_item in dups_childs:
+                    item = self.__create_standard_item_from_ui_item(ui_item)
+                    if ui_item.item_type == UIItemType.DIRECTORY:
+                        self.__load_duplicates_for_std_item(item)
+                    dups_childs_item.append(item)
+                clicked_item_model.appendRow(dups_childs_item)
+            else:
+                clicked_item_model.removeRows(0, clicked_item_model.rowCount())
+                self.__load_duplicates_for_std_item(clicked_item_model)
+            # how_many_children = clicked_item_model.rowCount()
+            # self.__model_dups.removeRows(0, how_many_children, clicked_item_model.index())
+        
+        
+    # def __update_list_dups(self,list_items:list):
+    #     self.__model_dups = QStandardItemModel()
+    #     self.__dups_list = list_items
+    #     for el in self.__dups_list:
+    #         print(el.item_id, el.item_rank)
+    #     self.__duplicate_tree_view.setModel(self.__model_dups)
+    #     for ui_item in list_items:
+    #         item = self.__create_standard_item_from_ui_item(ui_item)
+    #         self.__model_dups.appendRow(item)
 
-        central_widget.setLayout(vbox)
+    def __print_data_list(self, data, tab_level, file_handle = None):
+        for el in data:
+            tab_level_str = "".join(["   " for _ in range(tab_level)])
+            item = el[0]
+            childs = el[1]
+            if item.is_duplicate:
+                    str_to_print = tab_level_str + "- %s (%d) !*!"%(item.item_name,item.item_size)
+            else:
+                str_to_print = tab_level_str + "- %s (%d)"%(item.item_name,item.item_size)
+            if file_handle is not None:
+                file_handle.write(str_to_print+"\n")
+            print(str_to_print)
+            self.__print_data_list(childs, tab_level+1, file_handle)
+
+    def handle_check_cups_by_content(self):
+        self.__model_dups.clear()
+        cont =  OfflineController()
+        cont.check_duplicates_by_content(self.__current_target)
+        dups_items = cont.load_duplicates_for_target(self.__current_target)
+        for ui_item in dups_items:
+            item = self.__create_standard_item_from_ui_item(ui_item)
+            self.__load_duplicates_for_std_item(item)
+            self.__model_dups.appendRow(item)
+            
+        dups = cont.get_all_duplicates()
+        for el in dups:
+            print(el)
         
+        data = cont.get_graph_representation()
         
+        if data == [] or data is None:
+            print("empty data")
+        else:
+            print(len(data))
+            with open("graph.txt","w") as file:
+                self.__print_data_list(data, 0,file)
+        print("done")
+
     def _createMenu(self):
         menu = self.menuBar().addMenu("&Menu")
         menu.addAction("&Exit", self.close)
@@ -216,9 +307,16 @@ class OfflineWindowGUI(QMainWindow):
     #     status.showMessage("I'm the Status Bar")
     #     self.setStatusBar(status)
 
+class TestOfflineWindowGUI(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        window = OfflineWindowGUI()
+        self.setCentralWidget(window)
+
 if __name__ == "__main__":
-    app = QApplication([])
-    window = OfflineWindowGUI()
+    enable_debug_mode()
+    app = QApplication(sys.argv)
+    window = TestOfflineWindowGUI()
     window.show()
     sys.exit(app.exec())
     

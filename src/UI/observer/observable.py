@@ -19,3 +19,4 @@ class Observable(ABC):
     def notify_observers(self, update_event: UpdateEvent):
         for obs in self._observers:
             obs.update_signal.emit(update_event)
+    
