@@ -23,8 +23,6 @@ class FSRepository:
     __ITEM_SEPARATOR_FILE = b'%-2a0~%'
 
     def __init__(self):
-        self.__fs_item_child = {}
-        self.__session_stage = FsSessionType.NOT_STARTED
         self.__fs_item_child = {} # a list of children for each item_id 
         self.__fs_item_parent_ids = [] # a list of item_id that are directories 
         self.__session_stage = FsSessionType.NOT_STARTED # the current session of the file system
@@ -39,9 +37,7 @@ class FSRepository:
             :return: An integer representing status code: 0 - everything went great, everything else is an error
         """
         with open(self.__STORAGE_ITEM_FILE, "ab") as file:
-            #item_bitarray =  pickle.dumps(item)
             item_bitarray = FsItemFormatter.write_bytes(item)
-            #print(len(item_bitarray), len(item_bitarray + b'\n'))
             self.__write_item_to_file(file, item_bitarray)
         return 0
     
@@ -50,7 +46,6 @@ class FSRepository:
         potential_separator = [ b'0' for _ in range(len(self.__ITEM_SEPARATOR_FILE)) ]
         while True:
             byte_el = file_handler.read(1)
-            #print(byte_el)
             if byte_el == b'' or byte_el is None: # eof
                 break
             # to check if separator is reached a buffer with null element is used and is filled with the last len(self.__ITEM_SEPARATOR_FILE) 
@@ -207,7 +202,7 @@ class FSRepository:
         with open(self.__STORAGE_CHILD_FILE, "w") as file:
             for i_id in self.__fs_item_child.keys():
                 for child in self.__fs_item_child.get(i_id):
-                    file.write(str(i_id) + ":" + str(child) + "\n")
+                    file.write(str(i_id) + ":" + str(child.item_id) + "\n")
     
     def is_session_ended(self) -> bool:
         """
@@ -228,7 +223,7 @@ class FSRepository:
         Check if the current storage session can be ended
             :return: True if the current session has been ended, False otherwise 
         """
-        return self.__session_stage == FsSessionType.STARTED # cannot end the a not started session
+        return self.__session_stage == FsSessionType.STARTED # cannot end if the session is not started session
         
     def end_session(self) -> int:
         """
@@ -253,17 +248,21 @@ class FSRepository:
         if duplicates_path is None or duplicates_path == []:
             return -1
         items_found = []
+        
         with open(self.__STORAGE_ITEM_FILE, "rb") as file:
             with open(self.__STORAGE_ITEM_FILE_AUX, "wb") as file_aux:
+                # basically read each item from the storage file and write it in an auxiliary file
                 item_bitarray = self.__read_item_from_file(file)
-                while item_bitarray != "" and item_bitarray != b'' and item_bitarray is not None:
-                    #item_read = pickle.loads(item_bitarray)
-                    item_read = FsItemFormatter.read_bytes(item_bitarray)
+                while item_bitarray != "" and item_bitarray != b'' and item_bitarray is not None: # if eof or error
+                    item_read = FsItemFormatter.read_bytes(item_bitarray) # convert from bytes
+                    # check if the item path is in the list of duplicates, in that case mark it
                     if item_read.item_path in duplicates_path:
                         item_read.is_duplicate = True
-                    item_bitarray = FsItemFormatter.write_bytes(item_read)
+                    item_bitarray = FsItemFormatter.write_bytes(item_read) # convert to bytes
+                    # write to the auxiliary file
                     self.__write_item_to_file(file_aux, item_bitarray)
-                    item_bitarray = self.__read_item_from_file(file) 
+                    item_bitarray = self.__read_item_from_file(file) # next item
+        # delete the old storage file and rename the auxiliary file with the same name as the old storage file
         os.remove(self.__STORAGE_ITEM_FILE)
         os.rename(self.__STORAGE_ITEM_FILE_AUX, self.__STORAGE_ITEM_FILE)
         return 0
