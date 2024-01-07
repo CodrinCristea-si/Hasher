@@ -17,7 +17,7 @@ class ItemCodifier(Enum):
         ITEM_DUPLICATES_CODE = "duplicates"
         RESULTS_CODE = "results"
 
-class Repository:
+class DuplicateRepository:
     __STORAGE_FILE = "offline_storage.json"
     __ITEM_REPR = {
         ItemCodifier.ITEM_LOCATION_CODE:"",
@@ -159,5 +159,20 @@ class Repository:
                         break
         self.__mutex_progress.release()
         return hash_ent
-            
+    
+    def get_all_duplicates_full_path(self) -> list:
+        """
+        Gets the absolute path for all duplicates
+            :return: A list of strings containing the full/ absolute path for each duplicate
+        """
+        full_paths = []
+        self.__mutex_progress.acquire()
+        if os.path.getsize(self.__STORAGE_FILE) > 0:     
+            # if there is something in the file then parse it, find the object and get it's hash
+            with open(self.__STORAGE_FILE, "r") as storage_file:
+                objects_generator = ijson.items(storage_file, ItemCodifier.RESULTS_CODE.value + ".item")
+                for item in objects_generator:
+                    full_paths += item.get(ItemCodifier.ITEM_DUPLICATES_CODE.value)
+        self.__mutex_progress.release()
+        return full_paths
         
