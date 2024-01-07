@@ -6,6 +6,7 @@ Created on Sep 27, 2023
 import os
 from enum import Enum
 from Repository.fsitem import *
+from Utils.secure_debugging import safe_debug_function
 
 
 class FsSessionType(Enum):
@@ -242,7 +243,14 @@ class FSRepository:
         return 0
     
     def mark_all_duplicates(self, duplicates_path:list) -> int:
-        if duplicates_path is None:
+        """
+        For a list of paths mark each correspondent item as duplicate
+            :param duplicates_path: A list of strings in which each element represents the absolute path of an item
+            :return: The status code of this operation 
+                - 0 -> operation successful
+                - -1 -> the duplicates_path is either None or empty
+        """
+        if duplicates_path is None or duplicates_path == []:
             return -1
         items_found = []
         with open(self.__STORAGE_ITEM_FILE, "rb") as file:
@@ -260,5 +268,67 @@ class FSRepository:
         os.rename(self.__STORAGE_ITEM_FILE_AUX, self.__STORAGE_ITEM_FILE)
         return 0
     
+    def get_all_duplicates(self):
+        """
+        Get all the items that are duplicates
+            :return: A list of items that are duplicates
+        """
+        duplicates = []
+        with open(self.__STORAGE_ITEM_FILE, "rb") as file:
+            item_bitarray = self.__read_item_from_file(file)
+            # read each file and check if it is marked as duplicate, if so add to a list
+            while item_bitarray != "" and item_bitarray != b'' and item_bitarray is not None:
+                item_read = FsItemFormatter.read_bytes(item_bitarray)
+                if item_read.is_duplicate:
+                    duplicates.append(item_read)
+                item_bitarray = self.__read_item_from_file(file) 
+        return duplicates
 
-        
+    @safe_debug_function
+    def add_item_to_graph(self, data, item_read):
+        """
+        Try to add an element to the existing graph
+            :param data: current graph
+            :param item_read: the item to be added
+            :return: True if the item has been added, False otherwise
+        """
+        if data == []:
+            return False
+        for elem in data:
+            item = elem[0]
+            childs = elem[1]
+            if item.item_id == item_read.parent_id:
+                childs.append([item_read,[]])
+                return True
+            else:
+                is_added = self.add_item_to_graph(childs, item_read)
+                if is_added:
+                    return True
+        return False
+    
+    @safe_debug_function
+    def get_graph_representation(self):
+        """
+        Creates a tree representation of the current fs structure
+            :return: A list in which each element of the list or the sublist of children is ...
+                [item1,[[child_of_item1,[...]], [child_of_item2,[...]], ...]]
+        """
+        data = []
+        to_be_added = []
+        with open(self.__STORAGE_ITEM_FILE, "rb") as file:
+            item_bitarray = self.__read_item_from_file(file)
+            while item_bitarray != "" and item_bitarray != b'' and item_bitarray is not None:
+                item_read = FsItemFormatter.read_bytes(item_bitarray)
+                if to_be_added != []:
+                    aux = []
+                    for item in to_be_added:
+                        if not self.add_item_to_graph(data, item):
+                            aux.append(item)
+                    to_be_added = aux
+                if data == []:
+                    data.append([item_read,[]])
+                elif not self.add_item_to_graph(data, item_read):
+                    to_be_added.append(item_read)
+                item_bitarray = self.__read_item_from_file(file)
+        return data
+    
