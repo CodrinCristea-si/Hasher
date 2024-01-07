@@ -1,6 +1,6 @@
 import unittest
 import pickle
-# from Repository.repository import *
+# from Repository.duplicate_repository import *
 from Repository.fsrepository import FSRepository, FsItem, ItemType
 from Repository.SingletonRepository import *
 from Repository.fsitem import FsItemFormatter

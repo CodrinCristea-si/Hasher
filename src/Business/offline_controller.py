@@ -8,6 +8,8 @@ from threading import Thread
 from Business.oflline_worker import OfflineWorker, WorkerJobType
 from Business.offline_operator import OfflineOperator
 from Repository.SingletonRepository import SingletonRepository
+from Repository.SingletonRepository import SingletonDuplicateRepository
+from Repository.SingletonRepository import SingletonFsRepository
 
 
 class OfflineController:

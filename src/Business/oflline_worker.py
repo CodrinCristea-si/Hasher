@@ -11,7 +11,7 @@ from enum import Enum
 from Utils.algorithm import Algorithm
 from functools import partial
 from Business.operator import Operator
-from Repository.repository import Repository
+from Repository.duplicate_repository import DuplicateRepository
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -34,15 +34,18 @@ class WorkerJobType(Enum):
 
 class OfflineWorker:
     def __init__(self, operator: Operator, repo: Repository) -> None:
+    def __init__(self, operator: Operator, repo: DuplicateRepository) -> None:
         """
         OfflineWorker is an object that analyse a specific portion of the the target system. 
         It's primary tasks are creating and counter registries for each file or directory
             :param operator: - An Operator object related to the target system (local or remote system)
             :param repo: - A Repository object for file or directory registrations on the local system
+            :param repo: - A DuplicateRepository object for file or directory registrations on the local system
         """
         self.__task_list = [] # the list of files or directories that need to be analysed
         self.__operator = operator # Operator object related to the target system
         self.__repo = repo # Repository object for file or directory registrations on the local system
+        self.__repo = repo # DuplicateRepository object for file or directory registrations on the local system
         self.__status = WorkerStatus.INITIALISE # current status of the worker
         self.__th_worker = None # the thread that actually executes the task, this is useful for checking the status of the job
         self.__progres = 0 # how many entities from __task_list have been processed so far
