@@ -24,6 +24,9 @@ class FSRepository:
     def __init__(self):
         self.__fs_item_child = {}
         self.__session_stage = FsSessionType.NOT_STARTED
+        self.__fs_item_child = {} # a list of children for each item_id 
+        self.__fs_item_parent_ids = [] # a list of item_id that are directories 
+        self.__session_stage = FsSessionType.NOT_STARTED # the current session of the file system
     
     def __write_item_to_file(self, file_handler, item_bitarray:bytes) -> None:
         file_handler.write(item_bitarray + self.__ITEM_SEPARATOR_FILE)
@@ -155,15 +158,26 @@ class FSRepository:
             :param last_modified: The last time since the object has been modified ( a string object)
             :return: The id of the created item 
         """
+        # validation
+        # an item cannot have the parent_id of a file, in a File System architecture only directories can have other sub-directories and files, not otherwise 
+        if self.__fs_item_parent_ids != [] and parent_id not in self.__fs_item_parent_ids and parent_id <= self.__ITEM_CURRENT_ID:
+            raise Exception("Cannot add an item %s to a file as a parent" %(name))
+        
         # create new FsItem element
         item = FsItem(self.__ITEM_CURRENT_ID, name, type, parent_id, size, last_modified, False, path)
+        
+        # update the id for the next
         self.__ITEM_CURRENT_ID += 1
 
         # add child to parent
         if self.__fs_item_child.get(parent_id) is None:
             self.__fs_item_child[parent_id] = []
         self.__fs_item_child[parent_id].append(item)
-            
+        
+        # if dir add to the list of dirs id for validation
+        if item.item_type == ItemType.DIRECTORY:
+            self.__fs_item_parent_ids.append(item.item_id)
+        
         # save item to file
         self.__save_item_to_file(item)
         return item.item_id
@@ -177,6 +191,7 @@ class FSRepository:
             return -1
         self.__ITEM_CURRENT_ID = 1000
         self.__fs_item_child = {}
+        self.__fs_item_parent_ids = []
         with open(self.__STORAGE_ITEM_FILE, "w") as file:
             file.write("")
         with open(self.__STORAGE_CHILD_FILE, "w") as file:
